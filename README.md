@@ -77,7 +77,7 @@ The project is organized to be easily manageable and extensible:
 
 2.  **Create a Conda environment:**
     ```bash
-    conda create -n rtdis python=3.10
+    conda create -n rtdis python=3.11
     conda activate rtdis
     ```
 
