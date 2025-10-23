@@ -69,6 +69,8 @@ The project is organized to be easily manageable and extensible:
 
 ## Setup
 
+I recommend use **WSL/Linux** due of **their stability with torch**
+
 1.  **Clone the repository:**
     ```bash
     git clone https://github.com/nam-htran/RT-DisDINOV3
