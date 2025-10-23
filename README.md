@@ -6,7 +6,7 @@ This project is a refactored version of an initial Kaggle notebook, aiming for a
 
 ## Pre-trained Models (RT-DisDINOv3)
 
-The two RT-DETR models distilled through this project are publicly available on the Hugging Face Hub. You can easily download and use them.
+The two RT-DETR models distilled with TACO dataset through this project are publicly available on the Hugging Face Hub. You can easily download and use them.
 
 | Model Name                  | Teacher Model        | Hugging Face Hub Link                                                     |
 | :-------------------------- | :------------------- | :------------------------------------------------------------------------ |
