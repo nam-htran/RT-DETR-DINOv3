@@ -71,8 +71,8 @@ The project is organized to be easily manageable and extensible:
 
 1.  **Clone the repository:**
     ```bash
-    git clone <YOUR_REPO_URL>
-    cd <REPO_DIRECTORY>
+    git clone https://github.com/nam-htran/RT-DisDINOV3
+    cd RT-DisDINOV3
     ```
 
 2.  **Create a Conda environment:**
