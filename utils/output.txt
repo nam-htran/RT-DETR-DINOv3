@@ -1,11 +1,11 @@
 
 ===== .\config.py =====
-# ===== config.py =====
+# ===== config.py (Corrected Version) =====
 import os
 from pathlib import Path
 
 # --- Environment Configuration ---
-os.environ["USE_LIBUV"] = "0"  # A flag that can be useful in some environments
+os.environ["USE_LIBUV"] = "0"
 
 # --- Core Directories ---
 ROOT_DIR = Path(__file__).parent.absolute()
@@ -41,10 +41,11 @@ VIT_FINAL_WEIGHTS = VIT_DISTILL_DIR / 'distilled_rtdetr_vit_teacher_FINAL.pth'
 
 # --- RT-DETR Source Repo and Generated Configs ---
 RTDETR_SOURCE_DIR = ROOT_DIR / 'rtdetr'
-CONFIG_GEN_DIR = PROJECT_OUTPUT_DIR / 'CONFIG'
-RTDETR_FINETUNE_CONFIG_CONVNEXT = CONFIG_GEN_DIR / 'rtdetrv2_taco_finetune_convnext.yml'
-RTDETR_FINETUNE_CONFIG_VIT = CONFIG_GEN_DIR / 'rtdetrv2_taco_finetune_vit.yml'
-RTDETR_FINETUNE_CONFIG_BASELINE = CONFIG_GEN_DIR / 'rtdetrv2_taco_finetune_BASELINE.yml'
+RTDETR_PYTORCH_DIR = RTDETR_SOURCE_DIR / 'rtdetrv2_pytorch' # Thêm dòng này để dễ tham chiếu
+RTDETR_CONFIG_DIR = RTDETR_PYTORCH_DIR / 'configs/rtdetrv2' # Thêm dòng này để dễ tham chiếu
+RTDETR_FINETUNE_CONFIG_CONVNEXT = RTDETR_CONFIG_DIR / 'rtdetrv2_taco_finetune_convnext.yml'
+RTDETR_FINETUNE_CONFIG_VIT = RTDETR_CONFIG_DIR / 'rtdetrv2_taco_finetune_vit.yml'
+RTDETR_FINETUNE_CONFIG_BASELINE = RTDETR_CONFIG_DIR / 'rtdetrv2_taco_finetune_BASELINE.yml'
 
 # --- Fine-tuning Output Directories ---
 FINETUNE_BASELINE_OUTPUT_DIR = PROJECT_OUTPUT_DIR / 'FINETUNE_BASELINE'
@@ -53,7 +54,7 @@ FINETUNE_DISTILLED_OUTPUT_DIR = PROJECT_OUTPUT_DIR / 'FINETUNE_DISTILLED'
 # --- Source Code and Script Directories ---
 SCRIPTS_DIR = ROOT_DIR / 'scripts'
 SRC_DIR = ROOT_DIR / 'src'
-TEMPLATES_DIR = ROOT_DIR / 'templates'
+TEMPLATES_DIR = ROOT_DIR / 'templates' # Mặc dù không dùng nữa nhưng cứ để đây
 
 # --- WandB Project Names ---
 WANDB_PROJECT_CONVNEXT_DISTILL = "Distill-RTDETR-ConvNeXt-Teacher"
@@ -61,7 +62,8 @@ WANDB_PROJECT_VIT_DISTILL = "Distill-RTDETR-DINOv3-ViT-Teacher"
 WANDB_PROJECT_YOLO_FINETUNE = "yolo_runs_taco"
 
 # --- Training Hardware Configuration ---
-NUM_GPUS_PER_NODE = 2  # Adjust this to the number of GPUs available
+NUM_GPUS_PER_NODE = 1  # Adjust this to the number of GPUs available```
+
 
 ===== .\setup.py =====
 from setuptools import setup, find_packages
@@ -74,7 +76,7 @@ setup(
 )
 
 ===== .\train.py =====
-# ===== train.py =====
+# ===== train.py (Final Workaround Version) =====
 import os
 import subprocess
 import argparse
@@ -90,29 +92,60 @@ from scripts.convert_coco_to_yolo import run_conversion as run_coco_to_yolo_conv
 from scripts.generate_rtdetr_configs import run_config_generation
 from src.finetune.trainer_yolo import train_yolo_baseline
 
-def run_ddp_command(module_path: str):
-    """Helper function to execute DDP commands using torchrun."""
-    command = (
-        f"{sys.executable} -m torch.distributed.run "
-        f"--nproc_per_node={config.NUM_GPUS_PER_NODE} "
-        f"{module_path}"
-    )
+def run_python_script(script_path: str, cwd: Path):
+    """
+    Helper function to run a standard Python script.
+    """
+    command = f"{sys.executable} {script_path}"
+    print(f"\n{'='*30}")
+    print(f"🚀 Executing command in '{cwd}':")
+    print(f"   $ {command}")
+    print(f"{'='*30}")
+    
+    try:
+        subprocess.run(command, shell=True, check=True, text=True, cwd=cwd)
+    except subprocess.CalledProcessError as e:
+        print(f"--- ERROR: Command failed with exit code {e.returncode} ---", file=sys.stderr)
+        raise e
+
+def run_manual_ddp_script(script_path: str, cwd: Path):
+    """
+    WORKAROUND for Windows DDP.
+    This function manually sets environment variables and launches the training
+    script directly, bypassing the problematic torchrun launcher.
+    This is only intended for single-GPU or single-node multi-GPU setups.
+    """
+    # Create a copy of the current environment
+    env = os.environ.copy()
+
+    # --- Manually set DDP environment variables ---
+    env['MASTER_ADDR'] = 'localhost'
+    env['MASTER_PORT'] = '29500'  # A free port
+    env['RANK'] = '0'
+    env['WORLD_SIZE'] = str(config.NUM_GPUS_PER_NODE)
+    env['LOCAL_RANK'] = '0' # For single-process launch, this is always 0.
+                           # The script itself will handle device placement.
+    
+    # --- CRITICAL FIX for the original error ---
+    env["USE_LIBUV"] = "0"
+    
+    # Add project root to PYTHONPATH
+    env["PYTHONPATH"] = str(config.ROOT_DIR) + os.pathsep + env.get("PYTHONPATH", "")
+
+    command = f"{sys.executable} {script_path}"
     
     print(f"\n{'='*30}")
-    print(f"🚀 Executing DDP command:")
+    print(f"🚀 Executing MANUAL DDP command in '{cwd}':")
+    print(f"   (Setting DDP ENV VARS and USE_LIBUV=0)")
     print(f"   $ {command}")
     print(f"{'='*30}")
 
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(config.ROOT_DIR) + os.pathsep + env.get("PYTHONPATH", "")
-
     try:
-        subprocess.run(command, shell=True, check=True, text=True, cwd=config.ROOT_DIR, env=env)
+        # Run the command with the custom environment
+        subprocess.run(command, shell=True, check=True, text=True, cwd=cwd, env=env)
     except subprocess.CalledProcessError as e:
-        print(f"--- ERROR: DDP Command failed with exit code {e.returncode} ---", file=sys.stderr)
+        print(f"--- ERROR: Manual DDP Command failed with exit code {e.returncode} ---", file=sys.stderr)
         raise e
-
-# --- PIPELINE STEPS ---
 
 def step_prepare_data():
     """STEP 1: Prepare dataset — convert from COCO to YOLO format."""
@@ -122,36 +155,34 @@ def step_prepare_data():
 def step_distill():
     """STEP 2: Run knowledge distillation for both teacher models."""
     print("### STEP 2.1: Running Knowledge Distillation with ConvNeXt Teacher... ###")
-    run_ddp_command("src.distillation.trainer_convnext")
+    run_manual_ddp_script(str(config.SRC_DIR / "distillation/trainer_convnext.py"), cwd=config.ROOT_DIR)
     
     print("\n### STEP 2.2: Running Knowledge Distillation with ViT Teacher... ###")
-    run_ddp_command("src.distillation.trainer_vit")
+    run_manual_ddp_script(str(config.SRC_DIR / "distillation/trainer_vit.py"), cwd=config.ROOT_DIR)
 
 def step_finetune():
     """STEP 3: Run fine-tuning experiments for all models."""
-    
-    print("### STEP 3.1: Generating latest RT-DETR config files from templates... ###")
+    print("### STEP 3.1: Generating latest RT-DETR config files... ###")
     run_config_generation()
     
-    # --- RT-DETR Fine-tuning ---
+    rtdetr_train_script = str(config.RTDETR_SOURCE_DIR / "tools/train.py")
+
     print("\n### STEP 3.2: Fine-tuning RT-DETR (ConvNeXt Distilled)... ###")
-    run_ddp_command(f"rtdetr.tools.train -c {config.RTDETR_FINETUNE_CONFIG_CONVNEXT.absolute()} --use-amp --seed=0")
+    run_manual_ddp_script(f"{rtdetr_train_script} -c {config.RTDETR_FINETUNE_CONFIG_CONVNEXT} --use-amp --seed=0", cwd=config.RTDETR_PYTORCH_DIR)
 
     print("\n### STEP 3.3: Fine-tuning RT-DETR (ViT Distilled)... ###")
-    run_ddp_command(f"rtdetr.tools.train -c {config.RTDETR_FINETUNE_CONFIG_VIT.absolute()} --use-amp --seed=0")
+    run_manual_ddp_script(f"{rtdetr_train_script} -c {config.RTDETR_FINETUNE_CONFIG_VIT} --use-amp --seed=0", cwd=config.RTDETR_PYTORCH_DIR)
 
     print("\n### STEP 3.4: Fine-tuning RT-DETR (Baseline)... ###")
-    run_ddp_command(f"rtdetr.tools.train -c {config.RTDETR_FINETUNE_CONFIG_BASELINE.absolute()} --use-amp --seed=0")
+    run_manual_ddp_script(f"{rtdetr_train_script} -c {config.RTDETR_FINETUNE_CONFIG_BASELINE} --use-amp --seed=0", cwd=config.RTDETR_PYTORCH_DIR)
 
-    # --- YOLO Fine-tuning ---
     print("\n### STEP 3.5: Fine-tuning YOLO (Baseline)... ###")
     train_yolo_baseline()
 
 def main():
     """Main entry point to orchestrate the full training pipeline."""
-    
     print("### Initializing: Installing dependencies and cloning RT-DETR repo... ###")
-    subprocess.run(f"{sys.executable} -m pip install -r requirements.txt", shell=True, check=True)
+    subprocess.run(f"{sys.executable} -m pip install -q -r requirements.txt", shell=True, check=True)
     if not config.RTDETR_SOURCE_DIR.exists():
         subprocess.run(f"git clone https://github.com/lyuwenyu/RT-DETR.git {config.RTDETR_SOURCE_DIR}", shell=True, check=True)
     
@@ -167,10 +198,8 @@ def main():
 
     if run_all or args.prepare_data:
         step_prepare_data()
-
     if run_all or args.distill:
         step_distill()
-
     if run_all or args.finetune:
         step_finetune()
 
@@ -9953,17 +9982,20 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 import config
 
 def _generate_config_file(template_filename: str, output_filename: str, replacements: dict):
-    """Generates a config file from a template and a dictionary of replacements."""
-    template_path = config.TEMPLATES_DIR / template_filename
-    output_path = config.CONFIG_GEN_DIR / output_filename
+    """Generates a config file from a template inside the RTDETR config directory."""
+    # Path to the template file inside the cloned rtdetr repo
+    template_path = config.RTDETR_CONFIG_DIR / template_filename
+    # Path to the output .yml file, also inside the rtdetr repo
+    output_path = config.RTDETR_CONFIG_DIR / output_filename
 
-    config.CONFIG_GEN_DIR.mkdir(parents=True, exist_ok=True)
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}. Please ensure it exists.")
 
     with open(template_path, 'r') as f:
         content = f.read()
 
     for key, value in replacements.items():
-        # Ensure paths are absolute and use forward slashes for cross-platform compatibility
+        # Ensure paths are absolute and use forward slashes
         replacement_value = str(Path(value).absolute()).replace('\\', '/')
         content = content.replace(f"{{{key}}}", replacement_value)
 
@@ -9982,7 +10014,7 @@ def run_config_generation():
         "VAL_ANN_FILE": config.COCO_VAL_ANNOTATIONS,
     }
 
-    # Generate config for the ConvNeXt-distilled model
+    # Config for ConvNeXt-distilled model
     _generate_config_file(
         "rtdetrv2_taco_finetune_convnext.yml.template",
         "rtdetrv2_taco_finetune_convnext.yml",
@@ -9993,7 +10025,7 @@ def run_config_generation():
         }
     )
 
-    # Generate config for the ViT-distilled model
+    # Config for ViT-distilled model
     _generate_config_file(
         "rtdetrv2_taco_finetune_vit.yml.template",
         "rtdetrv2_taco_finetune_vit.yml",
@@ -10004,14 +10036,14 @@ def run_config_generation():
         }
     )
     
-    # Generate config for the Baseline model (no pre-trained weights)
+    # Config for Baseline model
     _generate_config_file(
         "rtdetrv2_taco_finetune_BASELINE.yml.template",
         "rtdetrv2_taco_finetune_BASELINE.yml",
         {
             **common_replacements,
             "OUTPUT_DIR": config.FINETUNE_BASELINE_OUTPUT_DIR / "rtdetrv2_finetune_taco_BASELINE",
-            "TUNING_CHECKPOINT": "''"  # Empty string for no checkpoint
+            "TUNING_CHECKPOINT": "''"
         }
     )
     print("--- Config generation complete. ---")
@@ -10028,7 +10060,7 @@ from pycocotools.coco import COCO
 
 class CocoDetectionForDistill(torch.utils.data.Dataset):
     """
-    Custom COCO dataset that only loads images, as labels are not needed for distillation.
+    Custom COCO dataset that only loads images, as labels are not needed for feature distillation.
     """
     def __init__(self, root, ann_file, transforms):
         self.root = root
@@ -10039,9 +10071,14 @@ class CocoDetectionForDistill(torch.utils.data.Dataset):
     def __getitem__(self, index):
         img_id = self.ids[index]
         path = self.coco.loadImgs(img_id)[0]["file_name"]
-        img = Image.open(os.path.join(self.root, path)).convert("RGB")
+        img_path = os.path.join(self.root, path)
+        img = Image.open(img_path).convert("RGB")
+        
+        if self.transforms is not None:
+            img = self.transforms(img)
+            
         # Return a dummy label (0) as required by the DataLoader
-        return self.transforms(img), 0
+        return img, 0
 
     def __len__(self):
         return len(self.ids)
@@ -10052,6 +10089,7 @@ class CocoDetectionForDistill(torch.utils.data.Dataset):
 ===== .\src\distillation\models.py =====
 # ===== src/distillation/models.py =====
 import os
+import torch
 import torch.nn as nn
 from transformers import AutoModel, AutoConfig
 from torch import Tensor
@@ -10059,7 +10097,7 @@ from torch import Tensor
 class HuggingFaceTeacherWrapper(nn.Module):
     """
     A flexible wrapper for teacher models from Hugging Face (supports both ConvNeXT and ViT).
-    It extracts feature maps from specified intermediate layers.
+    It standardizes the output to a list of feature maps for consistent distillation loss calculation.
     """
     def __init__(self, model_id: str, token: str = None):
         super().__init__()
@@ -10071,28 +10109,26 @@ class HuggingFaceTeacherWrapper(nn.Module):
         
         self.is_vit = "vit" in config.model_type.lower()
         
-        # Define feature layers and their dimensions based on model type
         if self.is_vit:
             self.feature_dims = [self._model.config.hidden_size]
-        else: # ConvNeXT
+        else:
             all_hidden_sizes = self._model.config.hidden_sizes
             self.feature_dims = [all_hidden_sizes[i] for i in [1, 2, 3]]
         
         if int(os.environ.get("RANK", 0)) == 0:
-            print(f"Architecture: {'ViT' if self.is_vit else 'ConvNeXT'}.")
+            print(f"Architecture detected: {'ViT' if self.is_vit else 'ConvNeXT'}.")
             print(f"Extracting features with dimensions: {self.feature_dims}")
 
     def forward(self, x: Tensor) -> list[Tensor]:
         outputs = self._model(pixel_values=x)
         
         if self.is_vit:
-            # For ViT, reshape the patch tokens into a 2D feature map
-            patch_tokens = outputs.last_hidden_state[:, 1:, :] # Exclude [CLS] token
+            patch_tokens = outputs.last_hidden_state[:, 1:, :]
             b, s, d = patch_tokens.shape
             h = w = int(s**0.5)
             feature_map = patch_tokens.permute(0, 2, 1).reshape(b, d, h, w)
             return [feature_map]
-        else: # For ConvNeXT, get the last 3 feature maps
+        else:
             return [outputs.hidden_states[i] for i in [2, 3, 4]]
 
 ===== .\src\distillation\trainer_convnext.py =====
@@ -10114,29 +10150,41 @@ from torch.utils.data.distributed import DistributedSampler
 from pathlib import Path
 import sys
 
-# Add project root to sys.path
+# Add project root to sys.path for consistent module resolution
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 import config as project_config
 from src.distillation.dataset import CocoDetectionForDistill
 from src.distillation.models import HuggingFaceTeacherWrapper
 
 def setup_ddp():
-    """Initialize the distributed process group."""
-    dist.init_process_group(backend="nccl")
-    torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+    """
+    Initializes the distributed process group.
+    Backend is selected based on the operating system.
+    """
+    backend = 'gloo' if sys.platform == 'win32' else 'nccl'
+    
+    if "WORLD_SIZE" in os.environ:
+        dist.init_process_group(backend=backend)
+        local_rank = int(os.environ["LOCAL_RANK"])
+        torch.cuda.set_device(local_rank)
+        if int(os.environ["RANK"]) == 0:
+            print(f"DDP Initialized with '{backend}' backend. World size: {os.environ['WORLD_SIZE']}.")
+    else:
+        print("WARNING: DDP environment variables not found. Running in single-process mode.")
 
 def cleanup_ddp():
-    """Destroy the distributed process group."""
-    dist.destroy_process_group()
+    """Destroys the distributed process group if it was initialized."""
+    if dist.is_initialized():
+        dist.destroy_process_group()
 
 def main_training_function(rank, world_size, cfg):
-    """The main training loop for knowledge distillation."""
+    """The main training loop for knowledge distillation with a ConvNeXT teacher."""
     device = rank
     is_main_process = (rank == 0)
     
     hf_token = None
     if is_main_process:
-        print(f"Running DDP on {world_size} GPUs.")
+        print(f"Starting distillation for ConvNeXt teacher on {world_size} GPU(s).")
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
         run_name = f"run_ddp_convnext_{timestamp}_lr{cfg['learning_rate']}_bs{cfg['batch_size_per_gpu']}"
         try:
@@ -10149,24 +10197,23 @@ def main_training_function(rank, world_size, cfg):
         except Exception as e:
             print(f"Could not log in, continuing without W&B. Error: {e}")
 
-        # Ensure output directories exist
         Path(cfg["best_weights_filename"]).parent.mkdir(parents=True, exist_ok=True)
     
-    dist.barrier()
+    if world_size > 1:
+        dist.barrier()
     
     # --- Model Initialization ---
     teacher_model = HuggingFaceTeacherWrapper(cfg["teacher_hf_id"], token=hf_token).to(device)
     teacher_model.eval()
 
-    # Load student model on main process first to prevent race conditions during download
     if is_main_process:
         torch.hub.load(str(project_config.RTDETR_SOURCE_DIR), "rtdetrv2_l", source='local', pretrained=True, trust_repo=True)
-    dist.barrier() 
+    if world_size > 1:
+        dist.barrier() 
 
     student_hub_model = torch.hub.load(str(project_config.RTDETR_SOURCE_DIR), "rtdetrv2_l", source='local', pretrained=True, trust_repo=True)
     student_model = student_hub_model.model.to(device)
 
-    # Create projection layers to match dimensions
     with torch.no_grad():
         x = torch.randn(1, 3, 640, 640).to(device)
         student_features_list = student_model.encoder(student_model.backbone(x))
@@ -10177,48 +10224,41 @@ def main_training_function(rank, world_size, cfg):
         nn.Conv2d(student_channels[i], teacher_dims[i], kernel_size=1) for i in range(len(student_channels))
     ]).to(device)
     
-    # Wrap models in DDP
-    student_model = DDP(student_model, device_ids=[device], find_unused_parameters=True)
-    projection_layers = DDP(projection_layers, device_ids=[device], find_unused_parameters=True)
+    if world_size > 1:
+        student_model = DDP(student_model, device_ids=[device], find_unused_parameters=True)
+        projection_layers = DDP(projection_layers, device_ids=[device], find_unused_parameters=True)
     
     # --- Data Loading ---
     transforms = T.Compose([
         T.Resize((640, 640)), T.ToTensor(),
         T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
-
     train_dataset = CocoDetectionForDistill(root=cfg["train_images_dir"], ann_file=cfg["train_ann_file"], transforms=transforms)
     val_dataset = CocoDetectionForDistill(root=cfg["val_images_dir"], ann_file=cfg["val_ann_file"], transforms=transforms)
     
-    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
-    val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=rank, shuffle=False)
+    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True) if world_size > 1 else None
+    val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=rank, shuffle=False) if world_size > 1 else None
 
-    train_loader = DataLoader(train_dataset, batch_size=cfg["batch_size_per_gpu"], shuffle=False, num_workers=cfg["num_workers"], pin_memory=True, sampler=train_sampler)
-    val_loader = DataLoader(val_dataset, batch_size=cfg["batch_size_per_gpu"], shuffle=False, num_workers=cfg["num_workers"], pin_memory=True, sampler=val_sampler)
+    train_loader = DataLoader(train_dataset, batch_size=cfg["batch_size_per_gpu"], num_workers=cfg["num_workers"], pin_memory=True, sampler=train_sampler, shuffle=(train_sampler is None))
+    val_loader = DataLoader(val_dataset, batch_size=cfg["batch_size_per_gpu"], num_workers=cfg["num_workers"], pin_memory=True, sampler=val_sampler)
 
     # --- Optimizer and Loss ---
-    params = list(student_model.module.backbone.parameters()) + \
-             list(student_model.module.encoder.parameters()) + \
-             list(projection_layers.module.parameters())
-             
+    student_module = student_model.module if world_size > 1 else student_model
+    projection_module = projection_layers.module if world_size > 1 else projection_layers
+    params = list(student_module.backbone.parameters()) + list(student_module.encoder.parameters()) + list(projection_module.parameters())
     optimizer = torch.optim.AdamW(params, lr=cfg["learning_rate"], weight_decay=cfg["weight_decay"])
     criterion = nn.MSELoss()
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=cfg['scheduler_factor'], patience=cfg['scheduler_patience'])
 
-    if is_main_process and wandb.run:
-        wandb.watch((student_model, projection_layers), log="all", log_freq=100)
-    
+    if is_main_process and wandb.run: wandb.watch((student_model, projection_layers), log="all", log_freq=100)
     best_val_loss = float('inf')
     early_stopping_counter = 0
-
-    if is_main_process: print("Starting distillation for ConvNeXt teacher...")
         
     # --- Training Loop ---
     for epoch in range(cfg["epochs"]):
-        train_sampler.set_epoch(epoch)
+        if world_size > 1:
+            train_sampler.set_epoch(epoch)
         start_time = time.time()
-        
-        # Training phase
         student_model.train(); projection_layers.train()
         total_train_loss = 0.0
         train_iterator = tqdm(train_loader, desc=f"Epoch {epoch+1}/{cfg['epochs']} [Train]", disable=not is_main_process)
@@ -10226,11 +10266,11 @@ def main_training_function(rank, world_size, cfg):
             images = images.to(device)
             with torch.no_grad():
                 teacher_features_list = teacher_model(images)
-            student_features_list = student_model.module.encoder(student_model.module.backbone(images))
+            student_features_list = student_model.module.encoder(student_model.module.backbone(images)) if world_size > 1 else student_model.encoder(student_model.backbone(images))
             
             total_loss = 0
             for i in range(len(student_features_list)):
-                projected_feat = projection_layers.module[i](student_features_list[i])
+                projected_feat = projection_module[i](student_features_list[i])
                 teacher_resized = F.interpolate(teacher_features_list[i], size=projected_feat.shape[-2:], mode="bilinear", align_corners=False)
                 total_loss += criterion(projected_feat, teacher_resized)
             
@@ -10239,12 +10279,12 @@ def main_training_function(rank, world_size, cfg):
             optimizer.step()
             total_train_loss += total_loss.item()
         
-        # Synchronize training loss across all GPUs
-        train_loss_tensor = torch.tensor(total_train_loss).to(device)
-        dist.all_reduce(train_loss_tensor, op=dist.ReduceOp.SUM)
-        avg_train_loss = train_loss_tensor.item() / (len(train_loader) * world_size)
+        if world_size > 1:
+            train_loss_tensor = torch.tensor(total_train_loss).to(device); dist.all_reduce(train_loss_tensor, op=dist.ReduceOp.SUM)
+            avg_train_loss = train_loss_tensor.item() / (len(train_loader) * world_size)
+        else:
+            avg_train_loss = total_train_loss / len(train_loader)
 
-        # Validation phase
         student_model.eval(); projection_layers.eval()
         total_val_loss = 0.0
         val_iterator = tqdm(val_loader, desc=f"Epoch {epoch+1}/{cfg['epochs']} [Val]", disable=not is_main_process)
@@ -10252,43 +10292,42 @@ def main_training_function(rank, world_size, cfg):
             for images, _ in val_iterator:
                 images = images.to(device)
                 teacher_features_list = teacher_model(images)
-                student_features_list = student_model.module.encoder(student_model.module.backbone(images))
-                
+                student_features_list = student_model.module.encoder(student_model.module.backbone(images)) if world_size > 1 else student_model.encoder(student_model.backbone(images))
                 loss = 0
                 for i in range(len(student_features_list)):
-                    projected = projection_layers.module[i](student_features_list[i])
+                    projected = projection_module[i](student_features_list[i])
                     teacher_resized = F.interpolate(teacher_features_list[i], size=projected.shape[-2:], mode="bilinear", align_corners=False)
                     loss += criterion(projected, teacher_resized)
                 total_val_loss += loss.item()
                 
-        # Synchronize validation loss
-        val_loss_tensor = torch.tensor(total_val_loss).to(device)
-        dist.all_reduce(val_loss_tensor, op=dist.ReduceOp.SUM)
-        avg_val_loss = val_loss_tensor.item() / (len(val_loader) * world_size)
+        if world_size > 1:
+            val_loss_tensor = torch.tensor(total_val_loss).to(device); dist.all_reduce(val_loss_tensor, op=dist.ReduceOp.SUM)
+            avg_val_loss = val_loss_tensor.item() / (len(val_loader) * world_size)
+        else:
+            avg_val_loss = total_val_loss / len(val_loader)
         
-        # Logging, scheduling, and checkpointing (main process only)
         if is_main_process:
             duration = time.time() - start_time
             print(f"Epoch {epoch+1} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Duration: {duration:.2f}s")
             if wandb.run: wandb.log({"epoch": epoch + 1, "train/avg_loss": avg_train_loss, "val/avg_loss": avg_val_loss})
-            
             scheduler.step(avg_val_loss)
-            
             if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                early_stopping_counter = 0
+                best_val_loss = avg_val_loss; early_stopping_counter = 0
                 print(f"Validation loss improved. Saving best model...")
-                best_weights = {**student_model.module.backbone.state_dict(), **student_model.module.encoder.state_dict()}
+                best_weights = {**student_module.backbone.state_dict(), **student_module.encoder.state_dict()}
                 torch.save({'model': best_weights}, cfg["best_weights_filename"])
             else:
                 early_stopping_counter += 1
                 print(f"Validation loss did not improve. Counter: {early_stopping_counter}/{cfg['early_stopping_patience']}")
 
-        # Early stopping check
-        stop_tensor = torch.tensor(1 if early_stopping_counter >= cfg['early_stopping_patience'] else 0, device=device)
-        dist.broadcast(stop_tensor, src=0)
-        if stop_tensor.item() == 1:
-            if is_main_process: print("Early stopping triggered.")
+        if world_size > 1:
+            stop_tensor = torch.tensor(1 if early_stopping_counter >= cfg['early_stopping_patience'] else 0, device=device)
+            dist.broadcast(stop_tensor, src=0)
+            if stop_tensor.item() == 1:
+                if is_main_process: print("Early stopping triggered.")
+                break
+        elif early_stopping_counter >= cfg['early_stopping_patience']:
+            print("Early stopping triggered.")
             break
             
     if is_main_process:
@@ -10300,26 +10339,21 @@ if __name__ == "__main__":
     load_dotenv(project_config.ROOT_DIR / '.env')
     
     try:
-        setup_ddp()
-        rank = int(os.environ["RANK"])
-        world_size = int(os.environ["WORLD_SIZE"])
+        rank = int(os.environ.get("RANK", 0))
+        world_size = int(os.environ.get("WORLD_SIZE", 1))
+        if world_size > 1:
+            setup_ddp()
 
-        training_config = {
-            "learning_rate": 1e-4, "epochs": 50, "batch_size_per_gpu": 16,
-            "num_workers": 2, "weight_decay": 1e-5,
+        cfg = {
+            "learning_rate": 1e-4, "epochs": 50, "batch_size_per_gpu": 16, "num_workers": 2, "weight_decay": 1e-5,
             "teacher_hf_id": "facebook/convnext-base-384-22k-1k",
-            "train_images_dir": str(project_config.COCO_TRAIN_IMAGES),
-            "val_images_dir": str(project_config.COCO_VAL_IMAGES),
-            "train_ann_file": str(project_config.COCO_TRAIN_ANNOTATIONS),
-            "val_ann_file": str(project_config.COCO_VAL_ANNOTATIONS),
-            "scheduler_patience": 3, "scheduler_factor": 0.1,
-            "early_stopping_patience": 7,
+            "train_images_dir": str(project_config.COCO_TRAIN_IMAGES), "val_images_dir": str(project_config.COCO_VAL_IMAGES),
+            "train_ann_file": str(project_config.COCO_TRAIN_ANNOTATIONS), "val_ann_file": str(project_config.COCO_VAL_ANNOTATIONS),
+            "scheduler_patience": 3, "scheduler_factor": 0.1, "early_stopping_patience": 7,
             "best_weights_filename": str(project_config.CONVNEXT_BEST_WEIGHTS),
-            "final_weights_filename": str(project_config.CONVNEXT_FINAL_WEIGHTS),
             "wandb_project": project_config.WANDB_PROJECT_CONVNEXT_DISTILL,
         }
-        
-        main_training_function(rank, world_size, training_config)
+        main_training_function(rank, world_size, cfg)
     finally:
         cleanup_ddp()
 
@@ -10342,29 +10376,40 @@ from torch.utils.data.distributed import DistributedSampler
 from pathlib import Path
 import sys
 
-# Add project root to sys.path
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 import config as project_config
 from src.distillation.dataset import CocoDetectionForDistill
 from src.distillation.models import HuggingFaceTeacherWrapper
 
 def setup_ddp():
-    """Initialize the distributed process group."""
-    dist.init_process_group(backend="nccl")
-    torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+    """
+    Initializes the distributed process group.
+    Backend is selected based on the operating system.
+    """
+    backend = 'gloo' if sys.platform == 'win32' else 'nccl'
+    
+    if "WORLD_SIZE" in os.environ:
+        dist.init_process_group(backend=backend)
+        local_rank = int(os.environ["LOCAL_RANK"])
+        torch.cuda.set_device(local_rank)
+        if int(os.environ["RANK"]) == 0:
+            print(f"DDP Initialized with '{backend}' backend. World size: {os.environ['WORLD_SIZE']}.")
+    else:
+        print("WARNING: DDP environment variables not found. Running in single-process mode.")
 
 def cleanup_ddp():
-    """Destroy the distributed process group."""
-    dist.destroy_process_group()
+    """Destroys the distributed process group if it was initialized."""
+    if dist.is_initialized():
+        dist.destroy_process_group()
 
 def main_training_function(rank, world_size, cfg):
-    """The main training loop for knowledge distillation."""
+    """The main training loop for knowledge distillation with a ViT teacher."""
     device = rank
     is_main_process = (rank == 0)
     
     hf_token = None
     if is_main_process:
-        print(f"Running DDP on {world_size} GPUs.")
+        print(f"Starting distillation for ViT teacher on {world_size} GPU(s).")
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
         run_name = f"run_ddp_vit_{timestamp}_lr{cfg['learning_rate']}_bs{cfg['batch_size_per_gpu']}"
         try:
@@ -10379,7 +10424,8 @@ def main_training_function(rank, world_size, cfg):
 
         Path(cfg["best_weights_filename"]).parent.mkdir(parents=True, exist_ok=True)
     
-    dist.barrier()
+    if world_size > 1:
+        dist.barrier()
     
     # --- Model Initialization ---
     teacher_model = HuggingFaceTeacherWrapper(cfg["teacher_hf_id"], token=hf_token).to(device)
@@ -10387,26 +10433,23 @@ def main_training_function(rank, world_size, cfg):
 
     if is_main_process:
         torch.hub.load(str(project_config.RTDETR_SOURCE_DIR), "rtdetrv2_l", source='local', pretrained=True, trust_repo=True)
-    dist.barrier() 
+    if world_size > 1:
+        dist.barrier()
 
     student_hub_model = torch.hub.load(str(project_config.RTDETR_SOURCE_DIR), "rtdetrv2_l", source='local', pretrained=True, trust_repo=True)
     student_model = student_hub_model.model.to(device)
 
-    # Create projection layers
     with torch.no_grad():
         x = torch.randn(1, 3, 640, 640).to(device)
         student_features_list = student_model.encoder(student_model.backbone(x))
-        student_channels = [f.shape[1] for f in student_features_list]
+        student_channels = student_features_list[-1].shape[1]
     
     teacher_dims = teacher_model.feature_dims
-    # Note: For ViT, we typically only match the last feature map. This logic assumes teacher returns a list.
-    projection_layers = nn.ModuleList([
-        nn.Conv2d(student_channels[-1], teacher_dims[0], kernel_size=1)
-    ]).to(device)
+    projection_layer = nn.Conv2d(student_channels, teacher_dims[0], kernel_size=1).to(device)
     
-    # Wrap models in DDP
-    student_model = DDP(student_model, device_ids=[device], find_unused_parameters=True)
-    projection_layers = DDP(projection_layers, device_ids=[device], find_unused_parameters=True)
+    if world_size > 1:
+        student_model = DDP(student_model, device_ids=[device], find_unused_parameters=True)
+        projection_layer = DDP(projection_layer, device_ids=[device])
     
     # --- Data Loading ---
     transforms = T.Compose([
@@ -10416,100 +10459,93 @@ def main_training_function(rank, world_size, cfg):
     train_dataset = CocoDetectionForDistill(root=cfg["train_images_dir"], ann_file=cfg["train_ann_file"], transforms=transforms)
     val_dataset = CocoDetectionForDistill(root=cfg["val_images_dir"], ann_file=cfg["val_ann_file"], transforms=transforms)
     
-    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
-    val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=rank, shuffle=False)
-
-    train_loader = DataLoader(train_dataset, batch_size=cfg["batch_size_per_gpu"], shuffle=False, num_workers=cfg["num_workers"], pin_memory=True, sampler=train_sampler)
-    val_loader = DataLoader(val_dataset, batch_size=cfg["batch_size_per_gpu"], shuffle=False, num_workers=cfg["num_workers"], pin_memory=True, sampler=val_sampler)
+    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True) if world_size > 1 else None
+    val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=rank, shuffle=False) if world_size > 1 else None
+    
+    train_loader = DataLoader(train_dataset, batch_size=cfg["batch_size_per_gpu"], num_workers=cfg["num_workers"], pin_memory=True, sampler=train_sampler, shuffle=(train_sampler is None))
+    val_loader = DataLoader(val_dataset, batch_size=cfg["batch_size_per_gpu"], num_workers=cfg["num_workers"], pin_memory=True, sampler=val_sampler)
 
     # --- Optimizer and Loss ---
-    params = list(student_model.module.backbone.parameters()) + \
-             list(student_model.module.encoder.parameters()) + \
-             list(projection_layers.module.parameters())
-             
+    student_module = student_model.module if world_size > 1 else student_model
+    projection_module = projection_layer.module if world_size > 1 else projection_layer
+    params = list(student_module.backbone.parameters()) + list(student_module.encoder.parameters()) + list(projection_module.parameters())
     optimizer = torch.optim.AdamW(params, lr=cfg["learning_rate"], weight_decay=cfg["weight_decay"])
     criterion = nn.MSELoss()
     scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=cfg['scheduler_factor'], patience=cfg['scheduler_patience'])
 
-    if is_main_process and wandb.run:
-        wandb.watch((student_model, projection_layers), log="all", log_freq=100)
-    
+    if is_main_process and wandb.run: wandb.watch((student_model, projection_layer), log="all", log_freq=100)
     best_val_loss = float('inf')
     early_stopping_counter = 0
-
-    if is_main_process: print("Starting distillation for ViT teacher...")
         
     # --- Training Loop ---
     for epoch in range(cfg["epochs"]):
-        train_sampler.set_epoch(epoch)
+        if world_size > 1:
+            train_sampler.set_epoch(epoch)
         start_time = time.time()
-        
-        # Training phase
-        student_model.train(); projection_layers.train()
+        student_model.train(); projection_layer.train()
         total_train_loss = 0.0
         train_iterator = tqdm(train_loader, desc=f"Epoch {epoch+1}/{cfg['epochs']} [Train]", disable=not is_main_process)
         for images, _ in train_iterator:
             images = images.to(device)
             with torch.no_grad():
-                teacher_features_list = teacher_model(images)
-            
-            # We only match the last feature map for ViT
-            student_feat = student_model.module.encoder(student_model.module.backbone(images))[-1]
-            teacher_feat = teacher_features_list[0]
-            
-            projected_feat = projection_layers.module[0](student_feat)
+                teacher_feat = teacher_model(images)[0]
+            student_feat = student_model.module.encoder(student_model.module.backbone(images))[-1] if world_size > 1 else student_model.encoder(student_model.backbone(images))
+            projected_feat = projection_layer(student_feat)
             teacher_resized = F.interpolate(teacher_feat, size=projected_feat.shape[-2:], mode="bilinear", align_corners=False)
             
             loss = criterion(projected_feat, teacher_resized)
-            
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             total_train_loss += loss.item()
         
-        # Sync losses
-        train_loss_tensor = torch.tensor(total_train_loss).to(device)
-        dist.all_reduce(train_loss_tensor, op=dist.ReduceOp.SUM)
-        avg_train_loss = train_loss_tensor.item() / (len(train_loader) * world_size)
-
-        # Validation phase
-        student_model.eval(); projection_layers.eval()
+        if world_size > 1:
+            train_loss_tensor = torch.tensor(total_train_loss).to(device); dist.all_reduce(train_loss_tensor, op=dist.ReduceOp.SUM)
+            avg_train_loss = train_loss_tensor.item() / (len(train_loader) * world_size)
+        else:
+            avg_train_loss = total_train_loss / len(train_loader)
+            
+        student_model.eval(); projection_layer.eval()
         total_val_loss = 0.0
         val_iterator = tqdm(val_loader, desc=f"Epoch {epoch+1}/{cfg['epochs']} [Val]", disable=not is_main_process)
         with torch.no_grad():
             for images, _ in val_iterator:
                 images = images.to(device)
-                teacher_features_list = teacher_model(images)
-                student_features = student_model.module.encoder(student_model.module.backbone(images))[-1]
-                projected = projection_layers.module[0](student_features)
-                teacher_resized = F.interpolate(teacher_features_list[0], size=projected.shape[-2:], mode="bilinear", align_corners=False)
+                teacher_feat = teacher_model(images)[0]
+                student_feat = student_model.module.encoder(student_model.module.backbone(images))[-1] if world_size > 1 else student_model.encoder(student_model.backbone(images))
+                projected = projection_layer(student_feat)
+                teacher_resized = F.interpolate(teacher_feat, size=projected.shape[-2:], mode="bilinear", align_corners=False)
                 loss = criterion(projected, teacher_resized)
                 total_val_loss += loss.item()
                 
-        val_loss_tensor = torch.tensor(total_val_loss).to(device)
-        dist.all_reduce(val_loss_tensor, op=dist.ReduceOp.SUM)
-        avg_val_loss = val_loss_tensor.item() / (len(val_loader) * world_size)
+        if world_size > 1:
+            val_loss_tensor = torch.tensor(total_val_loss).to(device); dist.all_reduce(val_loss_tensor, op=dist.ReduceOp.SUM)
+            avg_val_loss = val_loss_tensor.item() / (len(val_loader) * world_size)
+        else:
+            avg_val_loss = total_val_loss / len(val_loader)
         
         if is_main_process:
             duration = time.time() - start_time
             print(f"Epoch {epoch+1} | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f} | Duration: {duration:.2f}s")
             if wandb.run: wandb.log({"epoch": epoch + 1, "train/avg_loss": avg_train_loss, "val/avg_loss": avg_val_loss})
-            
             scheduler.step(avg_val_loss)
             if avg_val_loss < best_val_loss:
-                best_val_loss = avg_val_loss
-                early_stopping_counter = 0
+                best_val_loss = avg_val_loss; early_stopping_counter = 0
                 print(f"Validation loss improved. Saving best model...")
-                best_weights = {**student_model.module.backbone.state_dict(), **student_model.module.encoder.state_dict()}
+                best_weights = {**student_module.backbone.state_dict(), **student_module.encoder.state_dict()}
                 torch.save({'model': best_weights}, cfg["best_weights_filename"])
             else:
                 early_stopping_counter += 1
                 print(f"Validation loss did not improve. Counter: {early_stopping_counter}/{cfg['early_stopping_patience']}")
 
-        stop_tensor = torch.tensor(1 if early_stopping_counter >= cfg['early_stopping_patience'] else 0, device=device)
-        dist.broadcast(stop_tensor, src=0)
-        if stop_tensor.item() == 1:
-            if is_main_process: print("Early stopping triggered.")
+        if world_size > 1:
+            stop_tensor = torch.tensor(1 if early_stopping_counter >= cfg['early_stopping_patience'] else 0, device=device)
+            dist.broadcast(stop_tensor, src=0)
+            if stop_tensor.item() == 1:
+                if is_main_process: print("Early stopping triggered.")
+                break
+        elif early_stopping_counter >= cfg['early_stopping_patience']:
+            print("Early stopping triggered.")
             break
             
     if is_main_process:
@@ -10521,26 +10557,21 @@ if __name__ == "__main__":
     load_dotenv(project_config.ROOT_DIR / '.env')
 
     try:
-        setup_ddp()
-        rank = int(os.environ["RANK"])
-        world_size = int(os.environ["WORLD_SIZE"])
+        rank = int(os.environ.get("RANK", 0))
+        world_size = int(os.environ.get("WORLD_SIZE", 1))
+        if world_size > 1:
+            setup_ddp()
 
-        training_config = {
-            "learning_rate": 1e-4, "epochs": 50, "batch_size_per_gpu": 16,
-            "num_workers": 2, "weight_decay": 1e-5,
+        cfg = {
+            "learning_rate": 1e-4, "epochs": 50, "batch_size_per_gpu": 16, "num_workers": 2, "weight_decay": 1e-5,
             "teacher_hf_id": "facebook/dinov2-base", 
-            "train_images_dir": str(project_config.COCO_TRAIN_IMAGES),
-            "val_images_dir": str(project_config.COCO_VAL_IMAGES),
-            "train_ann_file": str(project_config.COCO_TRAIN_ANNOTATIONS),
-            "val_ann_file": str(project_config.COCO_VAL_ANNOTATIONS),
-            "scheduler_patience": 3, "scheduler_factor": 0.1,
-            "early_stopping_patience": 7,
+            "train_images_dir": str(project_config.COCO_TRAIN_IMAGES), "val_images_dir": str(project_config.COCO_VAL_IMAGES),
+            "train_ann_file": str(project_config.COCO_TRAIN_ANNOTATIONS), "val_ann_file": str(project_config.COCO_VAL_ANNOTATIONS),
+            "scheduler_patience": 3, "scheduler_factor": 0.1, "early_stopping_patience": 7,
             "best_weights_filename": str(project_config.VIT_BEST_WEIGHTS),
-            "final_weights_filename": str(project_config.VIT_FINAL_WEIGHTS),
             "wandb_project": project_config.WANDB_PROJECT_VIT_DISTILL,
         }
-        
-        main_training_function(rank, world_size, training_config)
+        main_training_function(rank, world_size, cfg)
     finally:
         cleanup_ddp()
 
@@ -10651,6 +10682,8 @@ if __name__ == '__main__':
 ./
     .env.example
     config.py
+    LICENSE_RT-DisDINOv3.txt
+    README.md
     requirements.txt
     setup.py
     train.py
@@ -10660,6 +10693,7 @@ if __name__ == '__main__':
         aftertrain-analysis.ipynb
         rt-dinov3.ipynb
     output/
+        DISTILL-CONVNEXT/
         YOLO/
     rtdetr/
         docker-compose.yml
