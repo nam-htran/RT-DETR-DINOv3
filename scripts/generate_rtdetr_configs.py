@@ -1,19 +1,27 @@
+# ===== scripts/generate_rtdetr_configs.py =====
 import sys
 from pathlib import Path
+import yaml
 
+# Add project root to path to import config
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 import config
 
 def _generate_config_file(template_filename: str, output_filename: str, replacements: dict):
-    template_path = config.RTDETR_SOURCE_DIR / 'configs' / 'rtdetrv2' / template_filename
-    output_path = config.CONFIG_GEN_DIR / output_filename
+    """Generates a config file from a template inside the RTDETR config directory."""
+    # Path to the template file inside the cloned rtdetr repo
+    template_path = config.RTDETR_CONFIG_DIR / template_filename
+    # Path to the output .yml file, also inside the rtdetr repo
+    output_path = config.RTDETR_CONFIG_DIR / output_filename
 
-    config.CONFIG_GEN_DIR.mkdir(parents=True, exist_ok=True)
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}. Please ensure it exists.")
 
     with open(template_path, 'r') as f:
         content = f.read()
 
     for key, value in replacements.items():
+        # Ensure paths are absolute and use forward slashes
         replacement_value = str(Path(value).absolute()).replace('\\', '/')
         content = content.replace(f"{{{key}}}", replacement_value)
 
@@ -22,6 +30,7 @@ def _generate_config_file(template_filename: str, output_filename: str, replacem
     print(f"Generated config file: {output_path}")
 
 def run_config_generation():
+    """Generates all necessary RT-DETR config files for fine-tuning."""
     print("--- Generating RT-DETR config files from templates... ---")
     
     common_replacements = {
@@ -31,39 +40,36 @@ def run_config_generation():
         "VAL_ANN_FILE": config.COCO_VAL_ANNOTATIONS,
     }
 
-    convnext_checkpoint_path = config.RTDETR_SOURCE_DIR / config.CONVNEXT_BEST_WEIGHTS.name
-    vit_checkpoint_path = config.RTDETR_SOURCE_DIR / config.VIT_CONVERTED_WEIGHTS.name
-
-    # Config cho model ConvNeXt-distilled
+    # Config for ConvNeXt-distilled model
     _generate_config_file(
         "rtdetrv2_taco_finetune_convnext.yml.template",
         "rtdetrv2_taco_finetune_convnext.yml",
         {
             **common_replacements,
             "OUTPUT_DIR": config.FINETUNE_DISTILLED_OUTPUT_DIR / "rtdetrv2_finetune_taco_convnext_teacher",
-            "TUNING_CHECKPOINT": convnext_checkpoint_path, 
+            "TUNING_CHECKPOINT": config.CONVNEXT_BEST_WEIGHTS,
         }
     )
 
-    # Config cho model ViT-distilled
+    # Config for ViT-distilled model
     _generate_config_file(
         "rtdetrv2_taco_finetune_vit.yml.template",
         "rtdetrv2_taco_finetune_vit.yml",
         {
             **common_replacements,
             "OUTPUT_DIR": config.FINETUNE_DISTILLED_OUTPUT_DIR / "rtdetrv2_finetune_taco_vit_teacher",
-            "TUNING_CHECKPOINT": vit_checkpoint_path, # Sửa ở đây
+            "TUNING_CHECKPOINT": config.VIT_BEST_WEIGHTS,
         }
     )
     
-    # Config cho model Baseline
+    # Config for Baseline model
     _generate_config_file(
         "rtdetrv2_taco_finetune_BASELINE.yml.template",
         "rtdetrv2_taco_finetune_BASELINE.yml",
         {
             **common_replacements,
             "OUTPUT_DIR": config.FINETUNE_BASELINE_OUTPUT_DIR / "rtdetrv2_finetune_taco_BASELINE",
-            "TUNING_CHECKPOINT": "''" 
+            "TUNING_CHECKPOINT": "''"
         }
     )
     print("--- Config generation complete. ---")
