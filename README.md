@@ -1,11 +1,3 @@
-Of course! Based on your detailed request, I have completely refactored the `README.md` file.
-
-I've corrected the model name from DINOv3 to **DINOv2** (as indicated by your code and Hugging Face links), added a detailed **Results and Analysis** section with hypotheses on why each teacher model performed the way it did, and created the requested **Mermaid diagram** to visualize the project workflow. The entire document is now in English.
-
-Here is the updated `README.md`:
-
----
-
 # RT-DisDINO: Knowledge Distillation for RT-DETR with DINOv2 Teachers
 
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python)![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white)![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-blue?style=for-the-badge)![WandB](https://img.shields.io/badge/Weights%20&%20Biases-FFCC00?style=for-the-badge&logo=weightsandbiases&logoColor=black)![License](https://img.shields.io/badge/License-Apache_2.0-lightgrey?style=for-the-badge)
@@ -24,47 +16,6 @@ The diagram below illustrates the complete experimental pipeline, from data prep
 - **Reproducible Structure:** Refactored from a notebook into a modular project with centralized configuration (`config.py`) and an orchestration script (`train.py`).
 - **Hugging Face Hub Integration:** Pre-trained distilled models are publicly available on the Hub for immediate use.
 - **Experiment Tracking:** Integrated with Weights & Biases for logging metrics, comparing runs, and visualizing results.
-
-## Pre-trained Models (RT-DisDINOv2)
-
-The two RT-DETR models distilled on the TACO dataset are publicly available on the Hugging Face Hub.
-
-| Model Name                  | Teacher Model        | Hugging Face Hub Link                                                     |
-| :-------------------------- | :------------------- | :------------------------------------------------------------------------ |
-| **RT-DisDINOv2-ConvNext**   | DINOv2 ConvNeXt-Base | [`hnamt/RT-DisDINOv2-ConvNext-Base`](https://huggingface.co/hnamt/RT-DisDINOv2-ConvNext-Base) |
-| **RT-DisDINOv2-ViT**        | DINOv2 ViT-Base      | [`hnamt/RT-DisDINOv2-ViT-Base`](https://huggingface.co/hnamt/RT-DisDINOv2-ViT-Base)       |
-
-### How to Use
-You can easily load these distilled weights and apply them to the original RT-DETR-L model from `torch.hub`.
-
-```python
-import torch
-from torch.hub import load_state_dict_from_url
-
-# 1. Load the original RT-DETR-L model from the local submodule
-# Ensure the 'rtdetr' directory is in your PYTHONPATH
-rtdetr_l = torch.hub.load('rtdetr', 'rtdetrv2_l', source='local', pretrained=True)
-model = rtdetr_l.model
-
-# 2. Choose and load the distilled weights from the Hugging Face Hub
-# URL for the ConvNeXt-distilled model
-MODEL_URL_CONVNEXT = "https://huggingface.co/hnamt/RT-DisDINOv2-ConvNext-Base/resolve/main/distilled_rtdetr_convnext_teacher_BEST.pth"
-# URL for the ViT-distilled model
-MODEL_URL_VIT = "https://huggingface.co/hnamt/RT-DisDINOv2-ViT-Base/resolve/main/distilled_rtdetr_vit_teacher_BEST.pth"
-
-# Load the state_dict (choose one URL)
-distilled_state_dict = load_state_dict_from_url(MODEL_URL_CONVNEXT, map_location='cpu')['model']
-
-# 3. Load the weights into the model's backbone and encoder
-# The `strict=False` flag is important as we are only loading a subset of the weights.
-model.load_state_dict(distilled_state_dict, strict=False)
-
-print("Successfully loaded and applied distilled knowledge weights!")
-
-# Now you can use the 'model' for fine-tuning on your own dataset or for inference.
-# model.eval()
-# ...
-```
 
 ## Results and Analysis
 
@@ -99,8 +50,8 @@ It is recommended to use **WSL/Linux** due to its stability with PyTorch's distr
 
 1.  **Clone the Repository:**
     ```bash
-    git clone https://github.com/nam-htran/RT-DisDINOV2
-    cd RT-DisDINOV2
+    git clone https://github.com/nam-htran/RT-DisDINOV3
+    cd RT-DisDINOV3
     ```
 
 2.  **Create and Activate Conda Environment:**
@@ -191,7 +142,7 @@ The `/kaggle` directory contains the original, stable notebooks where this resea
 ## License
 This project is licensed under the Apache 2.0 License. It incorporates components with their own licenses:
 - The core RT-DETR code is licensed under **Apache 2.0**.
-- The DINOv2 teacher models are governed by the **Custom DINOv2 License**.
+- The DINOv2 teacher models are governed by the **Custom DINOv3 License**.
 
 Please review the respective license files for full details.
 
