@@ -29,8 +29,8 @@ The final models were benchmarked on a **Tesla T4 GPU**. The results below summa
 | RT-DisDINOv2 (ViT)            |   2.90%   | 4.00%  |   59.04    |   40.92    |  136.06   |
 
 ### Key Findings
-1.  **ConvNeXt Teacher Succeeds:** Knowledge distillation from the **DINOv2 ConvNeXt-Base** teacher provided a significant performance boost, nearly **doubling the mAP@50-95** (3.10% -> 6.00%) compared to the RT-DETR baseline.
-2.  **ViT Teacher Struggles:** Distillation from the **DINOv2 ViT-Base** teacher failed to improve performance and resulted in slightly lower metrics than the baseline.
+1.  **ConvNeXt Teacher Succeeds:** Knowledge distillation from the **DINOv3 ConvNeXt-Base** teacher provided a significant performance boost, nearly **doubling the mAP@50-95** (3.10% -> 6.00%) compared to the RT-DETR baseline.
+2.  **ViT Teacher Struggles:** Distillation from the **DINOv3 ViT-Base** teacher failed to improve performance and resulted in slightly lower metrics than the baseline.
 3.  **YOLOv11 Dominates:** The YOLOv11-L baseline significantly outperforms all RT-DETR variants in both accuracy and efficiency (speed, parameters, FLOPs) on this dataset.
 
 ### Algorithmic Analysis
