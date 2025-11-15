@@ -1,10 +1,10 @@
-# RT-DisDINO: Knowledge Distillation for RT-DETR with DINOv2 Teachers
+# RT-DisDINO: Knowledge Distillation for RT-DETR with DINOv3 Teachers
 
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python)![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white)![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-blue?style=for-the-badge)![WandB](https://img.shields.io/badge/Weights%20&%20Biases-FFCC00?style=for-the-badge&logo=weightsandbiases&logoColor=black)![License](https://img.shields.io/badge/License-Apache_2.0-lightgrey?style=for-the-badge)
 
-This repository presents a complete pipeline for enhancing the **RT-DETR-L** object detection model using **Knowledge Distillation (KD)**. We employ two powerful "teacher" models from the DINOv2 family, **ConvNeXt-Base** and **ViT-Base**, to transfer their rich feature representations to the "student" model, RT-DETR. The entire training, distillation, and evaluation process is performed on the **TACO** waste dataset.
+This repository presents a complete pipeline for enhancing the **RT-DETR-L** object detection model using **Knowledge Distillation (KD)**. We employ two powerful "teacher" models from the DINOv3 family, **ConvNeXt-Base** and **ViT-Base**, to transfer their rich feature representations to the "student" model, RT-DETR. The entire training, distillation, and evaluation process is performed on the **TACO** waste dataset.
 
-This project is a professional refactoring of an initial, stable [Kaggle notebook](https://www.kaggle.com/code/tranhoangnamk18hcm/rt-disdinov2-distillation-finetune-analysis), designed to create a structured, reproducible, and easily extensible workflow for experimentation.
+This project is a professional refactoring of an initial, stable [Kaggle notebook](https://www.kaggle.com/code/tranhoangnamk18hcm/rt-disDINOv3-distillation-finetune-analysis), designed to create a structured, reproducible, and easily extensible workflow for experimentation.
 
 ## Project Workflow
 
@@ -25,8 +25,8 @@ The final models were benchmarked on a **Tesla T4 GPU**. The results below summa
 | ----------------------------- | :-------: | :----: | :--------: | :--------: | :-------: |
 | RT-DETR-L (Baseline)          |   3.10%   | 4.00%  |   59.94    |   40.92    |  136.06   |
 | YOLOv11-L (Baseline)          |  22.94%   | 26.37% | **29.42**  | **25.36**  | **87.53** |
-| **RT-DisDINOv2 (ConvNeXt)**   | **6.00%** | **8.20%** |   58.76    |   40.92    |  136.06   |
-| RT-DisDINOv2 (ViT)            |   2.90%   | 4.00%  |   59.04    |   40.92    |  136.06   |
+| **RT-DisDINOv3 (ConvNeXt)**   | **6.00%** | **8.20%** |   58.76    |   40.92    |  136.06   |
+| RT-DisDINOv3 (ViT)            |   2.90%   | 4.00%  |   59.04    |   40.92    |  136.06   |
 
 ### Key Findings
 1.  **ConvNeXt Teacher Succeeds:** Knowledge distillation from the **DINOv3 ConvNeXt-Base** teacher provided a significant performance boost, nearly **doubling the mAP@50-95** (3.10% -> 6.00%) compared to the RT-DETR baseline.
@@ -142,13 +142,13 @@ The `/kaggle` directory contains the original, stable notebooks where this resea
 ## License
 This project is licensed under the Apache 2.0 License. It incorporates components with their own licenses:
 - The core RT-DETR code is licensed under **Apache 2.0**.
-- The DINOv2 teacher models are governed by the **Custom DINOv3 License**.
+- The DINOv3 teacher models are governed by the **Custom DINOv3 License**.
 
 Please review the respective license files for full details.
 
 ## Acknowledgements
 This work builds upon the fantastic open-source contributions from the community:
 *   **RT-DETR**: [lyuwenyu/RT-DETR](https://github.com/lyuwenyu/RT-DETR)
-*   **DINOv2**: Meta AI for their powerful foundation models.
+*   **DINOv3**: Meta AI for their powerful foundation models.
 *   **TACO Dataset**: [pedropro/TACO](https://github.com/pedropro/TACO) and the Kaggle community for maintaining accessible versions.
 *   **Hugging Face**: For their `transformers` library and model hub, which greatly simplified teacher model integration.

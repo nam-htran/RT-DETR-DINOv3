@@ -204,7 +204,7 @@ if __name__ == "__main__":
 
         cfg = {
             "learning_rate": 1e-4, "epochs": 50, "batch_size_per_gpu": 16, "num_workers": 2, "weight_decay": 1e-5,
-            "teacher_hf_id": "facebook/dinov2-base", 
+            "teacher_hf_id": "facebook/dinov3-vitb16-pretrain-lvd1689m", 
             "train_images_dir": str(project_config.COCO_TRAIN_IMAGES), "val_images_dir": str(project_config.COCO_VAL_IMAGES),
             "train_ann_file": str(project_config.COCO_TRAIN_ANNOTATIONS), "val_ann_file": str(project_config.COCO_VAL_ANNOTATIONS),
             "scheduler_patience": 3, "scheduler_factor": 0.1, "early_stopping_patience": 7,
